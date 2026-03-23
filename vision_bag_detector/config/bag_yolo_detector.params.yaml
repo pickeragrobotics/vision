@@ -1,0 +1,15 @@
+bag_yolo_detector:
+  ros__parameters:
+    bag_path: "../data/real_sense_bags/20260312_100746.bag"
+    bag_reader_backend: "auto"
+    bag_storage_id: "sqlite3"
+    color_topic: "/camera/color/image_raw"
+    depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    detection_topic: "/detections"
+    confidence_threshold: 0.25
+    sync_tolerance_sec: 0.03
+    depth_scale_meters: 0.001
+    yolo_weights_path: ""
+    yolo_device: ""
+    processing_period_sec: 0.001
+    log_every_n_frames: 30
