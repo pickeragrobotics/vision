@@ -52,7 +52,7 @@ class Rosbag2ImagePairReader:
         self._pending_depths: List[ImageFrame] = []
         self._reader_exhausted = False
         self._type_map: Dict[str, object] = {}
-        self._reader = rosbag2_py.SequentialReader()
+        self._reader: Optional[rosbag2_py.SequentialReader] = None
         self._open()
 
     def __iter__(self) -> "Rosbag2ImagePairReader":
@@ -71,7 +71,11 @@ class Rosbag2ImagePairReader:
                         f"No depth frame matched color frame at {color_frame.stamp_ns} ns."
                     )
                     return FramePair(color=color_frame, depth=None)
-                raise StopIteration
+                self.restart()
+                continue
+
+            if self._reader is None:
+                raise RuntimeError("rosbag2 reader is not open.")
 
             if not self._reader.has_next():
                 self._reader_exhausted = True
@@ -96,6 +100,11 @@ class Rosbag2ImagePairReader:
                 self._pending_depths.append(frame)
 
     def _open(self) -> None:
+        self._pending_colors.clear()
+        self._pending_depths.clear()
+        self._reader_exhausted = False
+        self._type_map.clear()
+        self._reader = rosbag2_py.SequentialReader()
         storage_options = rosbag2_py.StorageOptions(uri=self._bag_path, storage_id=self._storage_id)
         converter_options = rosbag2_py.ConverterOptions(
             input_serialization_format="cdr",
@@ -120,6 +129,18 @@ class Rosbag2ImagePairReader:
         self._logger.info(
             f"Opened rosbag2 input '{self._bag_path}' with color topic '{self._color_topic}' and depth topic '{self._depth_topic}'."
         )
+
+    def close(self) -> None:
+        self._pending_colors.clear()
+        self._pending_depths.clear()
+        self._type_map.clear()
+        self._reader_exhausted = False
+        self._reader = None
+
+    def restart(self) -> None:
+        self._logger.info("Reached end of rosbag2 input. Restarting from the beginning.")
+        self.close()
+        self._open()
 
     def _convert_image_message(self, topic_name: str, message: Image) -> ImageFrame:
         if topic_name == self._color_topic:
@@ -187,59 +208,92 @@ class RealSenseBagReader:
 
         self._logger = logger
         self._rs = rs
-        self._pipeline = rs.pipeline()
-        self._config = rs.config()
-        rs.config.enable_device_from_file(self._config, str(Path(bag_path)), repeat_playback=False)
-        self._profile = self._pipeline.start(self._config)
-        self._playback = self._profile.get_device().as_playback()
-        self._playback.set_real_time(False)
-        self._align = rs.align(rs.stream.color)
-        self._depth_scale_meters = self._resolve_depth_scale()
+        self._bag_path = str(Path(bag_path))
+        self._pipeline = None
+        self._config = None
+        self._profile = None
+        self._playback = None
+        self._align = None
+        self._depth_scale_meters = None
+        self._open()
         self._logger.info(f"Opened native RealSense bag '{bag_path}'.")
 
     def __iter__(self) -> "RealSenseBagReader":
         return self
 
     def __next__(self) -> FramePair:
-        try:
-            frames = self._pipeline.wait_for_frames(5000)
-        except RuntimeError as exc:
-            if self._playback.current_status() == self._rs.playback_status.stopped:
-                self._pipeline.stop()
-                raise StopIteration
-            raise RuntimeError(f"Failed while reading RealSense frames: {exc}") from exc
+        while True:
+            if self._pipeline is None or self._playback is None or self._align is None:
+                raise RuntimeError("RealSense reader is not open.")
 
-        aligned_frames = self._align.process(frames)
-        color_frame = aligned_frames.get_color_frame()
-        depth_frame = aligned_frames.get_depth_frame()
+            try:
+                frames = self._pipeline.wait_for_frames(5000)
+            except RuntimeError as exc:
+                if self._playback.current_status() == self._rs.playback_status.stopped:
+                    self.restart()
+                    continue
+                raise RuntimeError(f"Failed while reading RealSense frames: {exc}") from exc
 
-        if not color_frame:
-            return self.__next__()
+            aligned_frames = self._align.process(frames)
+            color_frame = aligned_frames.get_color_frame()
+            depth_frame = aligned_frames.get_depth_frame()
 
-        color_stamp = self._frame_time(color_frame)
-        color_image = np.asanyarray(color_frame.get_data()).copy()
-        color = ImageFrame(
-            stamp=color_stamp,
-            stamp_ns=(color_stamp.sec * 1_000_000_000) + color_stamp.nanosec,
-            frame_id="camera_color_optical_frame",
-            image=color_image,
-            encoding="bgr8",
-        )
+            if not color_frame:
+                continue
 
-        depth = None
-        if depth_frame:
-            depth_stamp = self._frame_time(depth_frame)
-            depth_image = np.asanyarray(depth_frame.get_data()).copy()
-            depth = ImageFrame(
-                stamp=depth_stamp,
-                stamp_ns=(depth_stamp.sec * 1_000_000_000) + depth_stamp.nanosec,
-                frame_id="camera_depth_optical_frame",
-                image=depth_image,
-                encoding="16UC1" if depth_image.dtype == np.uint16 else "32FC1",
-                depth_scale_meters=self._depth_scale_meters,
+            color_stamp = self._frame_time(color_frame)
+            color_image = np.asanyarray(color_frame.get_data()).copy()
+            color = ImageFrame(
+                stamp=color_stamp,
+                stamp_ns=(color_stamp.sec * 1_000_000_000) + color_stamp.nanosec,
+                frame_id="camera_color_optical_frame",
+                image=color_image,
+                encoding="bgr8",
             )
 
-        return FramePair(color=color, depth=depth)
+            depth = None
+            if depth_frame:
+                depth_stamp = self._frame_time(depth_frame)
+                depth_image = np.asanyarray(depth_frame.get_data()).copy()
+                depth = ImageFrame(
+                    stamp=depth_stamp,
+                    stamp_ns=(depth_stamp.sec * 1_000_000_000) + depth_stamp.nanosec,
+                    frame_id="camera_depth_optical_frame",
+                    image=depth_image,
+                    encoding="16UC1" if depth_image.dtype == np.uint16 else "32FC1",
+                    depth_scale_meters=self._depth_scale_meters,
+                )
+
+            return FramePair(color=color, depth=depth)
+
+    def _open(self) -> None:
+        self._pipeline = self._rs.pipeline()
+        self._config = self._rs.config()
+        self._rs.config.enable_device_from_file(
+            self._config, self._bag_path, repeat_playback=True
+        )
+        self._profile = self._pipeline.start(self._config)
+        self._playback = self._profile.get_device().as_playback()
+        self._playback.set_real_time(False)
+        self._align = self._rs.align(self._rs.stream.color)
+        self._depth_scale_meters = self._resolve_depth_scale()
+
+    def close(self) -> None:
+        if self._pipeline is not None:
+            try:
+                self._pipeline.stop()
+            except RuntimeError:
+                pass
+        self._pipeline = None
+        self._config = None
+        self._profile = None
+        self._playback = None
+        self._align = None
+
+    def restart(self) -> None:
+        self._logger.info("Reached end of RealSense bag playback. Restarting from the beginning.")
+        self.close()
+        self._open()
 
     def _frame_time(self, frame) -> Time:
         stamp_ns = int(frame.get_timestamp() * 1_000_000)

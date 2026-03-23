@@ -27,18 +27,11 @@ class BagYoloDetectionNode(Node):
             confidence_threshold=self._config.confidence_threshold,
             device=self._config.yolo_device,
         )
-        self._frame_reader = create_frame_reader(
-            bag_path=self._config.bag_path,
-            bag_reader_backend=self._config.bag_reader_backend,
-            bag_storage_id=self._config.bag_storage_id,
-            color_topic=self._config.color_topic,
-            depth_topic=self._config.depth_topic,
-            sync_tolerance_sec=self._config.sync_tolerance_sec,
-            logger=self.get_logger(),
-        )
+        self._frame_reader = self._create_frame_reader()
         self._frame_iterator = iter(self._frame_reader)
         self._processed_frames = 0
         self._published_detections = 0
+        self._completed_loops = 0
         self._shutdown_timer: Optional[object] = None
         self._processing_timer = self.create_timer(
             self._config.processing_period_sec, self._process_next_frame
@@ -53,13 +46,7 @@ class BagYoloDetectionNode(Node):
         try:
             frame_pair = next(self._frame_iterator)
         except StopIteration:
-            self.get_logger().info(
-                f"Finished processing bag. Frames processed: {self._processed_frames}, "
-                f"detections published: {self._published_detections}."
-            )
-            self._processing_timer.cancel()
-            if self._shutdown_timer is None:
-                self._shutdown_timer = self.create_timer(0.2, self._shutdown)
+            self._restart_frame_reader()
             return
         except Exception as exc:
             self.get_logger().error(f"Pipeline failed: {exc}")
@@ -78,7 +65,8 @@ class BagYoloDetectionNode(Node):
         if self._processed_frames % self._config.log_every_n_frames == 0:
             self.get_logger().info(
                 f"Processed {self._processed_frames} frames, "
-                f"published {self._published_detections} detections so far."
+                f"published {self._published_detections} detections so far "
+                f"across {self._completed_loops} completed loop(s)."
             )
 
     def _run_inference(self, frame_pair: FramePair) -> list[DetectionResult]:
@@ -93,6 +81,29 @@ class BagYoloDetectionNode(Node):
                 fallback_depth_scale_meters=self._config.depth_scale_meters,
             )
         return detections
+
+    def _create_frame_reader(self):
+        return create_frame_reader(
+            bag_path=self._config.bag_path,
+            bag_reader_backend=self._config.bag_reader_backend,
+            bag_storage_id=self._config.bag_storage_id,
+            color_topic=self._config.color_topic,
+            depth_topic=self._config.depth_topic,
+            sync_tolerance_sec=self._config.sync_tolerance_sec,
+            logger=self.get_logger(),
+        )
+
+    def _restart_frame_reader(self) -> None:
+        self._completed_loops += 1
+        self.get_logger().info(
+            f"Reached end of bag playback after {self._processed_frames} frames and "
+            f"{self._published_detections} detections. Restarting loop {self._completed_loops}."
+        )
+        close_reader = getattr(self._frame_reader, "close", None)
+        if callable(close_reader):
+            close_reader()
+        self._frame_reader = self._create_frame_reader()
+        self._frame_iterator = iter(self._frame_reader)
 
     def _shutdown(self) -> None:
         if self._shutdown_timer is not None:
@@ -110,6 +121,9 @@ def main(args=None) -> None:
         pass
     finally:
         if node is not None:
+            close_reader = getattr(node._frame_reader, "close", None)
+            if callable(close_reader):
+                close_reader()
             node.destroy_node()
             try:
                 rclpy.shutdown()
