@@ -106,8 +106,14 @@ def main(args=None) -> None:
     try:
         node = BagYoloDetectionNode()
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         if node is not None:
             node.destroy_node()
+            try:
+                rclpy.shutdown()
+            except rclpy._rclpy_pybind11.RCLError:
+                pass
         if rclpy.ok():
             rclpy.shutdown()
