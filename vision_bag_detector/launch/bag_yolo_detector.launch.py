@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
@@ -26,6 +27,16 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="/workspace/data/weights/avocado_detection_v2.pt",
                 description="Path to the YOLO weights file.",
             ),
+            DeclareLaunchArgument(
+                "debug_mode",
+                default_value="true",
+                description="Enable annotated detection image publishing.",
+            ),
+            DeclareLaunchArgument(
+                "debug_image_topic",
+                default_value="/debug/detections_image",
+                description="Topic used for annotated detection images.",
+            ),
             Node(
                 package="vision_bag_detector",
                 executable="bag_yolo_detector",
@@ -36,6 +47,12 @@ def generate_launch_description() -> LaunchDescription:
                     {
                         "bag_path": LaunchConfiguration("bag_path"),
                         "yolo_weights_path": LaunchConfiguration("yolo_weights_path"),
+                        "debug_mode": ParameterValue(
+                            LaunchConfiguration("debug_mode"), value_type=bool
+                        ),
+                        "debug_image_topic": ParameterValue(
+                            LaunchConfiguration("debug_image_topic"), value_type=str
+                        ),
                     },
                 ],
             ),

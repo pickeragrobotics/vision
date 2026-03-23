@@ -3,11 +3,14 @@ from __future__ import annotations
 from typing import Optional
 
 import rclpy
+from cv_bridge import CvBridge
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
 
 from vision_bag_detector.bag_reader import FramePair, create_frame_reader
 from vision_bag_detector.config import DetectorConfig
+from vision_bag_detector.debug_utils import draw_detections
 from vision_bag_detector.depth_utils import compute_median_depth_m
 from vision_bag_detector.message_utils import DetectionMessageBuilder
 from vision_bag_detector.yolo_detector import DetectionResult, YoloDetector
@@ -21,6 +24,13 @@ class BagYoloDetectionNode(Node):
         self._publisher = self.create_publisher(
             Detection2DArray, self._config.detection_topic, 10
         )
+        self._debug_publisher = None
+        self._cv_bridge = None
+        if self._config.debug_mode:
+            self._debug_publisher = self.create_publisher(
+                Image, self._config.debug_image_topic, 10
+            )
+            self._cv_bridge = CvBridge()
         self._message_builder = DetectionMessageBuilder()
         self._detector = YoloDetector(
             weights_path=self._config.yolo_weights_path,
@@ -41,6 +51,10 @@ class BagYoloDetectionNode(Node):
             "Bag YOLO detector initialized. "
             f"Publishing detections to '{self._config.detection_topic}'."
         )
+        if self._config.debug_mode:
+            self.get_logger().info(
+                f"Debug image publishing enabled on '{self._config.debug_image_topic}'."
+            )
 
     def _process_next_frame(self) -> None:
         try:
@@ -58,6 +72,7 @@ class BagYoloDetectionNode(Node):
         detections = self._run_inference(frame_pair)
         detection_array = self._message_builder.build(frame_pair.color, detections)
         self._publisher.publish(detection_array)
+        self._publish_debug_image(frame_pair, detections)
 
         self._processed_frames += 1
         self._published_detections += len(detections)
@@ -104,6 +119,18 @@ class BagYoloDetectionNode(Node):
             close_reader()
         self._frame_reader = self._create_frame_reader()
         self._frame_iterator = iter(self._frame_reader)
+
+    def _publish_debug_image(
+        self, frame_pair: FramePair, detections: list[DetectionResult]
+    ) -> None:
+        if self._debug_publisher is None or self._cv_bridge is None:
+            return
+
+        annotated_image = draw_detections(frame_pair.color.image, detections)
+        debug_image = self._cv_bridge.cv2_to_imgmsg(annotated_image, encoding="bgr8")
+        debug_image.header.stamp = frame_pair.color.stamp
+        debug_image.header.frame_id = frame_pair.color.frame_id
+        self._debug_publisher.publish(debug_image)
 
     def _shutdown(self) -> None:
         if self._shutdown_timer is not None:

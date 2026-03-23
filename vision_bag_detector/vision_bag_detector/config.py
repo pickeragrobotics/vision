@@ -13,6 +13,8 @@ class DetectorConfig:
     color_topic: str
     depth_topic: str
     detection_topic: str
+    debug_mode: bool
+    debug_image_topic: str
     confidence_threshold: float
     sync_tolerance_sec: float
     depth_scale_meters: float
@@ -54,6 +56,20 @@ class DetectorConfig:
             "detection_topic",
             "/detections",
             ParameterDescriptor(description="Output topic for published vision_msgs/Detection2DArray messages."),
+        )
+        node.declare_parameter(
+            "debug_mode",
+            False,
+            ParameterDescriptor(
+                description="When true, publish annotated detection images for visualization."
+            ),
+        )
+        node.declare_parameter(
+            "debug_image_topic",
+            "/debug/detections_image",
+            ParameterDescriptor(
+                description="Output topic for annotated detection images when debug_mode is enabled."
+            ),
         )
         node.declare_parameter(
             "confidence_threshold",
@@ -98,6 +114,8 @@ class DetectorConfig:
             color_topic=node.get_parameter("color_topic").get_parameter_value().string_value,
             depth_topic=node.get_parameter("depth_topic").get_parameter_value().string_value,
             detection_topic=node.get_parameter("detection_topic").get_parameter_value().string_value,
+            debug_mode=node.get_parameter("debug_mode").value,
+            debug_image_topic=node.get_parameter("debug_image_topic").get_parameter_value().string_value,
             confidence_threshold=node.get_parameter("confidence_threshold").value,
             sync_tolerance_sec=node.get_parameter("sync_tolerance_sec").value,
             depth_scale_meters=node.get_parameter("depth_scale_meters").value,
@@ -122,6 +140,8 @@ class DetectorConfig:
             raise ValueError(
                 "Parameter 'bag_reader_backend' must be one of: auto, rosbag2, realsense."
             )
+        if not self.debug_image_topic:
+            raise ValueError("Parameter 'debug_image_topic' must not be empty.")
         if not 0.0 <= float(self.confidence_threshold) <= 1.0:
             raise ValueError("Parameter 'confidence_threshold' must be between 0.0 and 1.0.")
         if float(self.sync_tolerance_sec) < 0.0:
