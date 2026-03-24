@@ -145,8 +145,10 @@ class Rosbag2ImagePairReader:
     def _convert_image_message(self, topic_name: str, message: Image) -> ImageFrame:
         if topic_name == self._color_topic:
             image = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
+            encoding = "bgr8"
         else:
             image = self._bridge.imgmsg_to_cv2(message, desired_encoding="passthrough")
+            encoding = message.encoding
 
         stamp_ns = (message.header.stamp.sec * 1_000_000_000) + message.header.stamp.nanosec
         return ImageFrame(
@@ -154,7 +156,7 @@ class Rosbag2ImagePairReader:
             stamp_ns=stamp_ns,
             frame_id=message.header.frame_id,
             image=image,
-            encoding=message.encoding,
+            encoding=encoding,
         )
 
     def _try_make_pair(self) -> Optional[FramePair]:

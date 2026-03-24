@@ -12,6 +12,7 @@ class DetectorConfig:
     bag_storage_id: str
     color_topic: str
     depth_topic: str
+    flip_image: bool
     detection_topic: str
     debug_mode: bool
     debug_image_topic: str
@@ -51,6 +52,13 @@ class DetectorConfig:
             "depth_topic",
             "/camera/aligned_depth_to_color/image_raw",
             ParameterDescriptor(description="Depth image topic to read from a rosbag2 bag."),
+        )
+        node.declare_parameter(
+            "flip_image",
+            True,
+            ParameterDescriptor(
+                description="Rotate color and aligned depth images by 180 degrees before processing."
+            ),
         )
         node.declare_parameter(
             "detection_topic",
@@ -113,6 +121,7 @@ class DetectorConfig:
             bag_storage_id=node.get_parameter("bag_storage_id").get_parameter_value().string_value,
             color_topic=node.get_parameter("color_topic").get_parameter_value().string_value,
             depth_topic=node.get_parameter("depth_topic").get_parameter_value().string_value,
+            flip_image=node.get_parameter("flip_image").value,
             detection_topic=node.get_parameter("detection_topic").get_parameter_value().string_value,
             debug_mode=node.get_parameter("debug_mode").value,
             debug_image_topic=node.get_parameter("debug_image_topic").get_parameter_value().string_value,

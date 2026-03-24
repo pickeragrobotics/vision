@@ -5,6 +5,7 @@ bag_yolo_detector:
     bag_storage_id: "sqlite3"
     color_topic: "/camera/color/image_raw"
     depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    flip_image: true
     detection_topic: "/detections"
     debug_mode: false
     debug_image_topic: "/debug/detections_image"

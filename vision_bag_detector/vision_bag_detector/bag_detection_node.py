@@ -12,6 +12,7 @@ from vision_bag_detector.bag_reader import FramePair, create_frame_reader
 from vision_bag_detector.config import DetectorConfig
 from vision_bag_detector.debug_utils import draw_detections
 from vision_bag_detector.depth_utils import compute_median_depth_m
+from vision_bag_detector.image_utils import convert_to_rgb, flip_if_needed
 from vision_bag_detector.message_utils import DetectionMessageBuilder
 from vision_bag_detector.yolo_detector import DetectionResult, YoloDetector
 
@@ -51,6 +52,8 @@ class BagYoloDetectionNode(Node):
             "Bag YOLO detector initialized. "
             f"Publishing detections to '{self._config.detection_topic}'."
         )
+        if self._config.flip_image:
+            self.get_logger().info("Input image rotation is enabled (180 degrees).")
         if self._config.debug_mode:
             self.get_logger().info(
                 f"Debug image publishing enabled on '{self._config.debug_image_topic}'."
@@ -69,6 +72,7 @@ class BagYoloDetectionNode(Node):
                 self._shutdown_timer = self.create_timer(0.2, self._shutdown)
             return
 
+        self._apply_image_orientation(frame_pair)
         detections = self._run_inference(frame_pair)
         detection_array = self._message_builder.build(frame_pair.color, detections)
         self._publisher.publish(detection_array)
@@ -131,6 +135,16 @@ class BagYoloDetectionNode(Node):
         debug_image.header.stamp = frame_pair.color.stamp
         debug_image.header.frame_id = frame_pair.color.frame_id
         self._debug_publisher.publish(debug_image)
+
+    def _apply_image_orientation(self, frame_pair: FramePair) -> None:
+        frame_pair.color.image, frame_pair.color.encoding = convert_to_rgb(
+            frame_pair.color.image, frame_pair.color.encoding
+        )
+        frame_pair.color.image = flip_if_needed(frame_pair.color.image, self._config.flip_image)
+        if frame_pair.depth is not None:
+            frame_pair.depth.image = flip_if_needed(
+                frame_pair.depth.image, self._config.flip_image
+            )
 
     def _shutdown(self) -> None:
         if self._shutdown_timer is not None:
