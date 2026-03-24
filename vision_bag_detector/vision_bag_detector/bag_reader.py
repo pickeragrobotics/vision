@@ -12,7 +12,16 @@ from cv_bridge import CvBridge
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
+
+
+@dataclass
+class CameraIntrinsics:
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    frame_id: str
 
 
 @dataclass
@@ -29,6 +38,7 @@ class ImageFrame:
 class FramePair:
     color: ImageFrame
     depth: Optional[ImageFrame]
+    camera_intrinsics: Optional[CameraIntrinsics] = None
 
 
 class Rosbag2ImagePairReader:
@@ -38,6 +48,7 @@ class Rosbag2ImagePairReader:
         storage_id: str,
         color_topic: str,
         depth_topic: str,
+        camera_info_topic: str,
         sync_tolerance_sec: float,
         logger: RcutilsLogger,
     ) -> None:
@@ -45,6 +56,7 @@ class Rosbag2ImagePairReader:
         self._storage_id = storage_id
         self._color_topic = color_topic
         self._depth_topic = depth_topic
+        self._camera_info_topic = camera_info_topic
         self._sync_tolerance_ns = int(sync_tolerance_sec * 1_000_000_000)
         self._logger = logger
         self._bridge = CvBridge()
@@ -52,6 +64,7 @@ class Rosbag2ImagePairReader:
         self._pending_depths: List[ImageFrame] = []
         self._reader_exhausted = False
         self._type_map: Dict[str, object] = {}
+        self._latest_camera_intrinsics: Optional[CameraIntrinsics] = None
         self._reader: Optional[rosbag2_py.SequentialReader] = None
         self._open()
 
@@ -70,7 +83,11 @@ class Rosbag2ImagePairReader:
                     self._logger.warning(
                         f"No depth frame matched color frame at {color_frame.stamp_ns} ns."
                     )
-                    return FramePair(color=color_frame, depth=None)
+                    return FramePair(
+                        color=color_frame,
+                        depth=None,
+                        camera_intrinsics=self._latest_camera_intrinsics,
+                    )
                 self.restart()
                 continue
 
@@ -82,7 +99,10 @@ class Rosbag2ImagePairReader:
                 continue
 
             topic_name, serialized_message, _ = self._reader.read_next()
-            if topic_name not in {self._color_topic, self._depth_topic}:
+            valid_topics = {self._color_topic, self._depth_topic}
+            if self._camera_info_topic:
+                valid_topics.add(self._camera_info_topic)
+            if topic_name not in valid_topics:
                 continue
 
             message_type = self._type_map.get(topic_name)
@@ -90,6 +110,11 @@ class Rosbag2ImagePairReader:
                 continue
 
             message = deserialize_message(serialized_message, message_type)
+            if topic_name == self._camera_info_topic:
+                if isinstance(message, CameraInfo):
+                    self._latest_camera_intrinsics = self._convert_camera_info_message(message)
+                continue
+
             if not isinstance(message, Image):
                 continue
 
@@ -104,6 +129,7 @@ class Rosbag2ImagePairReader:
         self._pending_depths.clear()
         self._reader_exhausted = False
         self._type_map.clear()
+        self._latest_camera_intrinsics = None
         self._reader = rosbag2_py.SequentialReader()
         storage_options = rosbag2_py.StorageOptions(uri=self._bag_path, storage_id=self._storage_id)
         converter_options = rosbag2_py.ConverterOptions(
@@ -125,9 +151,15 @@ class Rosbag2ImagePairReader:
             raise ValueError(
                 f"Depth topic '{self._depth_topic}' not found in bag. Available topics: {sorted(available_topics)}"
             )
+        if self._camera_info_topic and self._camera_info_topic not in available_topics:
+            self._logger.warning(
+                f"CameraInfo topic '{self._camera_info_topic}' not found in bag. "
+                "3D detections will be skipped until intrinsics are available."
+            )
 
         self._logger.info(
-            f"Opened rosbag2 input '{self._bag_path}' with color topic '{self._color_topic}' and depth topic '{self._depth_topic}'."
+            f"Opened rosbag2 input '{self._bag_path}' with color topic '{self._color_topic}', "
+            f"depth topic '{self._depth_topic}', and camera info topic '{self._camera_info_topic}'."
         )
 
     def close(self) -> None:
@@ -135,6 +167,7 @@ class Rosbag2ImagePairReader:
         self._pending_depths.clear()
         self._type_map.clear()
         self._reader_exhausted = False
+        self._latest_camera_intrinsics = None
         self._reader = None
 
     def restart(self) -> None:
@@ -157,6 +190,15 @@ class Rosbag2ImagePairReader:
             frame_id=message.header.frame_id,
             image=image,
             encoding=encoding,
+        )
+
+    def _convert_camera_info_message(self, message: CameraInfo) -> CameraIntrinsics:
+        return CameraIntrinsics(
+            fx=float(message.k[0]),
+            fy=float(message.k[4]),
+            cx=float(message.k[2]),
+            cy=float(message.k[5]),
+            frame_id=message.header.frame_id,
         )
 
     def _try_make_pair(self) -> Optional[FramePair]:
@@ -185,7 +227,11 @@ class Rosbag2ImagePairReader:
 
         if best_index is not None and best_delta is not None and best_delta <= self._sync_tolerance_ns:
             self._pending_colors.popleft()
-            return FramePair(color=color_frame, depth=self._pending_depths.pop(best_index))
+            return FramePair(
+                color=color_frame,
+                depth=self._pending_depths.pop(best_index),
+                camera_intrinsics=self._latest_camera_intrinsics,
+            )
 
         if self._pending_depths:
             earliest_depth = self._pending_depths[0]
@@ -194,7 +240,11 @@ class Rosbag2ImagePairReader:
                 self._logger.warning(
                     f"No synchronized depth frame found for color frame at {color_frame.stamp_ns} ns."
                 )
-                return FramePair(color=color_frame, depth=None)
+                return FramePair(
+                    color=color_frame,
+                    depth=None,
+                    camera_intrinsics=self._latest_camera_intrinsics,
+                )
 
         return None
 
@@ -217,6 +267,7 @@ class RealSenseBagReader:
         self._playback = None
         self._align = None
         self._depth_scale_meters = None
+        self._camera_intrinsics = None
         self._open()
         self._logger.info(f"Opened native RealSense bag '{bag_path}'.")
 
@@ -266,7 +317,11 @@ class RealSenseBagReader:
                     depth_scale_meters=self._depth_scale_meters,
                 )
 
-            return FramePair(color=color, depth=depth)
+            return FramePair(
+                color=color,
+                depth=depth,
+                camera_intrinsics=self._camera_intrinsics,
+            )
 
     def _open(self) -> None:
         self._pipeline = self._rs.pipeline()
@@ -279,6 +334,7 @@ class RealSenseBagReader:
         self._playback.set_real_time(False)
         self._align = self._rs.align(self._rs.stream.color)
         self._depth_scale_meters = self._resolve_depth_scale()
+        self._camera_intrinsics = self._resolve_color_intrinsics()
 
     def close(self) -> None:
         if self._pipeline is not None:
@@ -291,6 +347,7 @@ class RealSenseBagReader:
         self._profile = None
         self._playback = None
         self._align = None
+        self._camera_intrinsics = None
 
     def restart(self) -> None:
         self._logger.info("Reached end of RealSense bag playback. Restarting from the beginning.")
@@ -312,6 +369,23 @@ class RealSenseBagReader:
             )
             return None
 
+    def _resolve_color_intrinsics(self) -> Optional[CameraIntrinsics]:
+        try:
+            color_stream = self._profile.get_stream(self._rs.stream.color)
+            intrinsics = color_stream.as_video_stream_profile().get_intrinsics()
+            return CameraIntrinsics(
+                fx=float(intrinsics.fx),
+                fy=float(intrinsics.fy),
+                cx=float(intrinsics.ppx),
+                cy=float(intrinsics.ppy),
+                frame_id="camera_color_optical_frame",
+            )
+        except RuntimeError:
+            self._logger.warning(
+                "Could not query RealSense color intrinsics. 3D detections will be skipped."
+            )
+            return None
+
 
 def create_frame_reader(
     bag_path: str,
@@ -319,6 +393,7 @@ def create_frame_reader(
     bag_storage_id: str,
     color_topic: str,
     depth_topic: str,
+    camera_info_topic: str,
     sync_tolerance_sec: float,
     logger: RcutilsLogger,
 ):
@@ -336,6 +411,7 @@ def create_frame_reader(
         storage_id=bag_storage_id,
         color_topic=color_topic,
         depth_topic=depth_topic,
+        camera_info_topic=camera_info_topic,
         sync_tolerance_sec=sync_tolerance_sec,
         logger=logger,
     )

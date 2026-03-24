@@ -13,6 +13,8 @@ class DetectionResult:
     confidence: float
     bbox_xyxy: Tuple[float, float, float, float]
     depth_m: float | None = None
+    center_pixel_xy: Tuple[int, int] | None = None
+    position_xyz: Tuple[float, float, float] | None = None
 
 
 class YoloDetector:

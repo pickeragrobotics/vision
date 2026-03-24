@@ -6,12 +6,16 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from vision_msgs.msg import Detection2DArray
+from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from vision_bag_detector.bag_reader import FramePair, create_frame_reader
 from vision_bag_detector.config import DetectorConfig
 from vision_bag_detector.debug_utils import draw_detections
-from vision_bag_detector.depth_utils import compute_median_depth_m
+from vision_bag_detector.depth_utils import (
+    compute_bbox_center_pixel,
+    deproject_pixel_to_3d,
+    get_depth_at_pixel_m,
+)
 from vision_bag_detector.image_utils import convert_to_rgb, flip_if_needed
 from vision_bag_detector.message_utils import DetectionMessageBuilder
 from vision_bag_detector.yolo_detector import DetectionResult, YoloDetector
@@ -25,8 +29,12 @@ class BagYoloDetectionNode(Node):
         self._publisher = self.create_publisher(
             Detection2DArray, self._config.detection_topic, 10
         )
+        self._publisher_3d = self.create_publisher(
+            Detection3DArray, self._config.detection_3d_topic, 10
+        )
         self._debug_publisher = None
         self._cv_bridge = None
+        self._missing_intrinsics_warned = False
         if self._config.debug_mode:
             self._debug_publisher = self.create_publisher(
                 Image, self._config.debug_image_topic, 10
@@ -50,7 +58,8 @@ class BagYoloDetectionNode(Node):
 
         self.get_logger().info(
             "Bag YOLO detector initialized. "
-            f"Publishing detections to '{self._config.detection_topic}'."
+            f"Publishing detections to '{self._config.detection_topic}' "
+            f"and '{self._config.detection_3d_topic}'."
         )
         if self._config.flip_image:
             self.get_logger().info("Input image rotation is enabled (180 degrees).")
@@ -74,8 +83,10 @@ class BagYoloDetectionNode(Node):
 
         self._apply_image_orientation(frame_pair)
         detections = self._run_inference(frame_pair)
-        detection_array = self._message_builder.build(frame_pair.color, detections)
-        self._publisher.publish(detection_array)
+        detection_array_2d = self._message_builder.build_2d(frame_pair.color, detections)
+        detection_array_3d = self._message_builder.build_3d(frame_pair.color, detections)
+        self._publisher.publish(detection_array_2d)
+        self._publisher_3d.publish(detection_array_3d)
         self._publish_debug_image(frame_pair, detections)
 
         self._processed_frames += 1
@@ -94,11 +105,32 @@ class BagYoloDetectionNode(Node):
             return detections
 
         for detection in detections:
-            detection.depth_m = compute_median_depth_m(
-                depth_frame=frame_pair.depth,
+            detection.center_pixel_xy = compute_bbox_center_pixel(
                 bbox_xyxy=detection.bbox_xyxy,
+                image_shape=frame_pair.color.image.shape[:2],
+            )
+            detection.depth_m = get_depth_at_pixel_m(
+                depth_frame=frame_pair.depth,
+                pixel_xy=detection.center_pixel_xy,
                 fallback_depth_scale_meters=self._config.depth_scale_meters,
             )
+            if detection.depth_m is None or frame_pair.camera_intrinsics is None:
+                continue
+
+            detection.position_xyz = deproject_pixel_to_3d(
+                pixel_xy=self._pixel_for_projection(
+                    pixel_xy=detection.center_pixel_xy,
+                    image_shape=frame_pair.color.image.shape[:2],
+                ),
+                depth_m=detection.depth_m,
+                camera_intrinsics=frame_pair.camera_intrinsics,
+            )
+
+        if detections and frame_pair.camera_intrinsics is None and not self._missing_intrinsics_warned:
+            self.get_logger().warning(
+                "Camera intrinsics are not available, so 3D detections will be skipped."
+            )
+            self._missing_intrinsics_warned = True
         return detections
 
     def _create_frame_reader(self):
@@ -108,6 +140,7 @@ class BagYoloDetectionNode(Node):
             bag_storage_id=self._config.bag_storage_id,
             color_topic=self._config.color_topic,
             depth_topic=self._config.depth_topic,
+            camera_info_topic=self._config.camera_info_topic,
             sync_tolerance_sec=self._config.sync_tolerance_sec,
             logger=self.get_logger(),
         )
@@ -145,6 +178,16 @@ class BagYoloDetectionNode(Node):
             frame_pair.depth.image = flip_if_needed(
                 frame_pair.depth.image, self._config.flip_image
             )
+
+    def _pixel_for_projection(
+        self, pixel_xy: tuple[int, int], image_shape: tuple[int, int]
+    ) -> tuple[int, int]:
+        if not self._config.flip_image:
+            return pixel_xy
+
+        image_height, image_width = image_shape
+        pixel_x, pixel_y = pixel_xy
+        return (image_width - 1) - pixel_x, (image_height - 1) - pixel_y
 
     def _shutdown(self) -> None:
         if self._shutdown_timer is not None:

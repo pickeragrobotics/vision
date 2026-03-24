@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from vision_bag_detector.bag_reader import ImageFrame
+from vision_bag_detector.bag_reader import CameraIntrinsics, ImageFrame
 
 
 def clamp_bbox_to_image(
@@ -62,3 +62,59 @@ def compute_median_depth_m(
         return None
 
     return float(np.median(valid_depths))
+
+
+def compute_bbox_center_pixel(
+    bbox_xyxy: Tuple[float, float, float, float], image_shape: Tuple[int, int]
+) -> Tuple[int, int]:
+    height, width = image_shape
+    x_min, y_min, x_max, y_max = bbox_xyxy
+    center_x = int(round((float(x_min) + float(x_max)) / 2.0))
+    center_y = int(round((float(y_min) + float(y_max)) / 2.0))
+    center_x = max(0, min(center_x, width - 1))
+    center_y = max(0, min(center_y, height - 1))
+    return center_x, center_y
+
+
+def get_depth_at_pixel_m(
+    depth_frame: Optional[ImageFrame],
+    pixel_xy: Tuple[int, int],
+    fallback_depth_scale_meters: float,
+) -> Optional[float]:
+    if depth_frame is None:
+        return None
+
+    image_height, image_width = depth_frame.image.shape[:2]
+    pixel_x, pixel_y = pixel_xy
+    if not (0 <= pixel_x < image_width and 0 <= pixel_y < image_height):
+        return None
+
+    depth_value = depth_frame.image[pixel_y, pixel_x]
+    if np.issubdtype(depth_frame.image.dtype, np.integer):
+        scale = depth_frame.depth_scale_meters or fallback_depth_scale_meters
+        depth_m = float(depth_value) * float(scale)
+    else:
+        depth_m = float(depth_value)
+
+    if not np.isfinite(depth_m) or depth_m <= 0.0:
+        return None
+
+    return depth_m
+
+
+def deproject_pixel_to_3d(
+    pixel_xy: Tuple[float, float],
+    depth_m: float,
+    camera_intrinsics: Optional[CameraIntrinsics],
+) -> Optional[Tuple[float, float, float]]:
+    if camera_intrinsics is None:
+        return None
+    if camera_intrinsics.fx <= 0.0 or camera_intrinsics.fy <= 0.0:
+        return None
+    if not np.isfinite(depth_m) or depth_m <= 0.0:
+        return None
+
+    pixel_x, pixel_y = pixel_xy
+    x_m = (float(pixel_x) - camera_intrinsics.cx) * float(depth_m) / camera_intrinsics.fx
+    y_m = (float(pixel_y) - camera_intrinsics.cy) * float(depth_m) / camera_intrinsics.fy
+    return x_m, y_m, float(depth_m)

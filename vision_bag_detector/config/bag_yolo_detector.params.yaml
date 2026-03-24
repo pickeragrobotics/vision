@@ -5,8 +5,10 @@ bag_yolo_detector:
     bag_storage_id: "sqlite3"
     color_topic: "/camera/color/image_raw"
     depth_topic: "/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/color/camera_info"
     flip_image: true
     detection_topic: "/detections"
+    detection_3d_topic: "/detections_3d"
     debug_mode: false
     debug_image_topic: "/debug/detections_image"
     confidence_threshold: 0.25

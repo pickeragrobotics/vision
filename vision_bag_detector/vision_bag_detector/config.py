@@ -12,8 +12,10 @@ class DetectorConfig:
     bag_storage_id: str
     color_topic: str
     depth_topic: str
+    camera_info_topic: str
     flip_image: bool
     detection_topic: str
+    detection_3d_topic: str
     debug_mode: bool
     debug_image_topic: str
     confidence_threshold: float
@@ -54,6 +56,13 @@ class DetectorConfig:
             ParameterDescriptor(description="Depth image topic to read from a rosbag2 bag."),
         )
         node.declare_parameter(
+            "camera_info_topic",
+            "/camera/color/camera_info",
+            ParameterDescriptor(
+                description="CameraInfo topic used to extract color camera intrinsics from a rosbag2 bag."
+            ),
+        )
+        node.declare_parameter(
             "flip_image",
             True,
             ParameterDescriptor(
@@ -64,6 +73,13 @@ class DetectorConfig:
             "detection_topic",
             "/detections",
             ParameterDescriptor(description="Output topic for published vision_msgs/Detection2DArray messages."),
+        )
+        node.declare_parameter(
+            "detection_3d_topic",
+            "/detections_3d",
+            ParameterDescriptor(
+                description="Output topic for published vision_msgs/Detection3DArray messages."
+            ),
         )
         node.declare_parameter(
             "debug_mode",
@@ -121,8 +137,10 @@ class DetectorConfig:
             bag_storage_id=node.get_parameter("bag_storage_id").get_parameter_value().string_value,
             color_topic=node.get_parameter("color_topic").get_parameter_value().string_value,
             depth_topic=node.get_parameter("depth_topic").get_parameter_value().string_value,
+            camera_info_topic=node.get_parameter("camera_info_topic").get_parameter_value().string_value,
             flip_image=node.get_parameter("flip_image").value,
             detection_topic=node.get_parameter("detection_topic").get_parameter_value().string_value,
+            detection_3d_topic=node.get_parameter("detection_3d_topic").get_parameter_value().string_value,
             debug_mode=node.get_parameter("debug_mode").value,
             debug_image_topic=node.get_parameter("debug_image_topic").get_parameter_value().string_value,
             confidence_threshold=node.get_parameter("confidence_threshold").value,
@@ -149,6 +167,10 @@ class DetectorConfig:
             raise ValueError(
                 "Parameter 'bag_reader_backend' must be one of: auto, rosbag2, realsense."
             )
+        if not self.detection_topic:
+            raise ValueError("Parameter 'detection_topic' must not be empty.")
+        if not self.detection_3d_topic:
+            raise ValueError("Parameter 'detection_3d_topic' must not be empty.")
         if not self.debug_image_topic:
             raise ValueError("Parameter 'debug_image_topic' must not be empty.")
         if not 0.0 <= float(self.confidence_threshold) <= 1.0:

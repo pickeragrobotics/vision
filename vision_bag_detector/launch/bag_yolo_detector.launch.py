@@ -33,6 +33,16 @@ def generate_launch_description() -> LaunchDescription:
                 description="Rotate the input image stream by 180 degrees before processing.",
             ),
             DeclareLaunchArgument(
+                "camera_info_topic",
+                default_value="/camera/color/camera_info",
+                description="CameraInfo topic used to extract camera intrinsics from rosbag2 input.",
+            ),
+            DeclareLaunchArgument(
+                "detection_3d_topic",
+                default_value="/detections_3d",
+                description="Topic used for published 3D detections.",
+            ),
+            DeclareLaunchArgument(
                 "debug_mode",
                 default_value="true",
                 description="Enable annotated detection image publishing.",
@@ -54,6 +64,12 @@ def generate_launch_description() -> LaunchDescription:
                         "yolo_weights_path": LaunchConfiguration("yolo_weights_path"),
                         "flip_image": ParameterValue(
                             LaunchConfiguration("flip_image"), value_type=bool
+                        ),
+                        "camera_info_topic": ParameterValue(
+                            LaunchConfiguration("camera_info_topic"), value_type=str
+                        ),
+                        "detection_3d_topic": ParameterValue(
+                            LaunchConfiguration("detection_3d_topic"), value_type=str
                         ),
                         "debug_mode": ParameterValue(
                             LaunchConfiguration("debug_mode"), value_type=bool
