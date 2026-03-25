@@ -11,8 +11,20 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", ["launch/bag_yolo_detector.launch.py"]),
-        (f"share/{package_name}/config", ["config/bag_yolo_detector.params.yaml"]),
+        (
+            f"share/{package_name}/launch",
+            [
+                "launch/bag_yolo_detector.launch.py",
+                "launch/from_camera_full_pipeline.launch.py",
+            ],
+        ),
+        (
+            f"share/{package_name}/config",
+            [
+                "config/bag_yolo_detector.params.yaml",
+                "config/camera_yolo_detector.params.yaml",
+            ],
+        ),
     ],
     install_requires=["setuptools", "numpy"],
     zip_safe=True,
@@ -24,6 +36,7 @@ setup(
     entry_points={
         "console_scripts": [
             "bag_yolo_detector = vision_bag_detector.bag_detection_node:main",
+            "camera_yolo_detector = vision_bag_detector.camera_detection_node:main",
         ],
     },
 )
