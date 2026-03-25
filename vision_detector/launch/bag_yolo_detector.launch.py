@@ -13,7 +13,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "params_file",
                 default_value=PathJoinSubstitution(
-                    [FindPackageShare("vision_bag_detector"), "config", "bag_yolo_detector.params.yaml"]
+                    [FindPackageShare("vision_detector"), "config", "bag_yolo_detector.params.yaml"]
                 ),
                 description="Optional ROS 2 parameter file for the bag_yolo_detector node.",
             ),
@@ -53,7 +53,7 @@ def generate_launch_description() -> LaunchDescription:
                 description="Topic used for annotated detection images.",
             ),
             Node(
-                package="vision_bag_detector",
+                package="vision_detector",
                 executable="bag_yolo_detector",
                 name="bag_yolo_detector",
                 output="screen",

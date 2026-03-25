@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>vision_bag_detector</name>
+  <name>vision_detector</name>
   <version>0.1.0</version>
   <description>ROS 2 Python package for reading bagged RealSense image streams, running YOLO inference, and publishing detections.</description>
   <maintainer email="dev@example.com">Vision Team</maintainer>

@@ -15,8 +15,8 @@ from vision_msgs.msg import (
     Point2D,
 )
 
-from vision_bag_detector.bag_reader import ImageFrame
-from vision_bag_detector.yolo_detector import DetectionResult
+from vision_detector.bag_reader import ImageFrame
+from vision_detector.yolo_detector import DetectionResult
 
 
 class DetectionMessageBuilder:

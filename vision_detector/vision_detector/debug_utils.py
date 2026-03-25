@@ -5,7 +5,7 @@ from typing import Sequence
 import cv2
 import numpy as np
 
-from vision_bag_detector.yolo_detector import DetectionResult
+from vision_detector.yolo_detector import DetectionResult
 
 
 def draw_detections(image_bgr: np.ndarray, detections: Sequence[DetectionResult]) -> np.ndarray:

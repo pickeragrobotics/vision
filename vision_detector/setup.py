@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 
-package_name = "vision_bag_detector"
+package_name = "vision_detector"
 
 
 setup(
@@ -35,8 +35,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "bag_yolo_detector = vision_bag_detector.bag_detection_node:main",
-            "camera_yolo_detector = vision_bag_detector.camera_detection_node:main",
+            "bag_yolo_detector = vision_detector.bag_detection_node:main",
+            "camera_yolo_detector = vision_detector.camera_detection_node:main",
         ],
     },
 )

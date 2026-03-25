@@ -1,6 +1,6 @@
 # vision
 
-This repository now contains a ROS 2 Python package at `vision_bag_detector/` for offline detection on bagged Intel RealSense data.
+This repository now contains a ROS 2 Python package at `vision_detector/` for offline detection on bagged Intel RealSense data.
 
 The package provides:
 
@@ -11,13 +11,13 @@ The package provides:
 
 ## Package Layout
 
-- `vision_bag_detector/vision_bag_detector/bag_detection_node.py`: main ROS 2 node
-- `vision_bag_detector/vision_bag_detector/bag_reader.py`: rosbag2 and RealSense bag readers
-- `vision_bag_detector/vision_bag_detector/yolo_detector.py`: YOLO wrapper
-- `vision_bag_detector/vision_bag_detector/depth_utils.py`: depth extraction helpers
-- `vision_bag_detector/vision_bag_detector/message_utils.py`: `vision_msgs` conversion
-- `vision_bag_detector/config/bag_yolo_detector.params.yaml`: starter parameters
-- `vision_bag_detector/launch/bag_yolo_detector.launch.py`: launch entry point
+- `vision_detector/vision_detector/bag_detection_node.py`: main ROS 2 node
+- `vision_detector/vision_detector/bag_reader.py`: rosbag2 and RealSense bag readers
+- `vision_detector/vision_detector/yolo_detector.py`: YOLO wrapper
+- `vision_detector/vision_detector/depth_utils.py`: depth extraction helpers
+- `vision_detector/vision_detector/message_utils.py`: `vision_msgs` conversion
+- `vision_detector/config/bag_yolo_detector.params.yaml`: starter parameters
+- `vision_detector/launch/bag_yolo_detector.launch.py`: launch entry point
 
 ## Dependencies
 
@@ -36,9 +36,9 @@ pip install pyrealsense2
 ## Example
 
 ```bash
-colcon build --packages-select vision_bag_detector
+colcon build --packages-select vision_detector
 source install/setup.bash
-ros2 launch vision_bag_detector bag_yolo_detector.launch.py \
+ros2 launch vision_detector bag_yolo_detector.launch.py \
   bag_path:=/path/to/bag \
   yolo_weights_path:=/path/to/yolo.pt
 ```

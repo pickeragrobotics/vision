@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from vision_bag_detector.bag_reader import CameraIntrinsics, ImageFrame
+from vision_detector.bag_reader import CameraIntrinsics, ImageFrame
 
 
 def clamp_bbox_to_image(

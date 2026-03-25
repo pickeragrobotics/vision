@@ -9,17 +9,17 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import Detection2DArray, Detection3DArray
 
-from vision_bag_detector.bag_reader import CameraIntrinsics, FramePair, ImageFrame
-from vision_bag_detector.config import LiveDetectorConfig
-from vision_bag_detector.debug_utils import draw_detections
-from vision_bag_detector.depth_utils import (
+from vision_detector.bag_reader import CameraIntrinsics, FramePair, ImageFrame
+from vision_detector.config import LiveDetectorConfig
+from vision_detector.debug_utils import draw_detections
+from vision_detector.depth_utils import (
     compute_bbox_center_pixel,
     deproject_pixel_to_3d,
     get_depth_at_pixel_m,
 )
-from vision_bag_detector.image_utils import convert_to_rgb, flip_if_needed
-from vision_bag_detector.message_utils import DetectionMessageBuilder
-from vision_bag_detector.yolo_detector import DetectionResult, YoloDetector
+from vision_detector.image_utils import convert_to_rgb, flip_if_needed
+from vision_detector.message_utils import DetectionMessageBuilder
+from vision_detector.yolo_detector import DetectionResult, YoloDetector
 
 
 class CameraYoloDetectionNode(Node):

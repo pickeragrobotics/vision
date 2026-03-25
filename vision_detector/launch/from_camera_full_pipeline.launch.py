@@ -39,7 +39,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     detector_node = Node(
-        package="vision_bag_detector",
+        package="vision_detector",
         executable="camera_yolo_detector",
         name="camera_yolo_detector",
         output="screen",
@@ -69,7 +69,7 @@ def generate_launch_description() -> LaunchDescription:
                 "params_file",
                 default_value=PathJoinSubstitution(
                     [
-                        FindPackageShare("vision_bag_detector"),
+                        FindPackageShare("vision_detector"),
                         "config",
                         "camera_yolo_detector.params.yaml",
                     ]
