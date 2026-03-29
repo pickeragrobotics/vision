@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  picker-vision:
+    container_name: picker_vision
+    image: picker:vision
+    shm_size: '2gb'  # Critical: Increases shared memory from default 64MB to 2GB
+    runtime: nvidia
+    build:
+      dockerfile: docker/Dockerfile_vision
+      context: ../
+    working_dir: /workspace
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - "${HOME}/.Xauthority:/root/.Xauthority" # Changed to use absolute path for clarity and robustness
+#      - ../ros2_ws:/workspace
+      - ../ros2_ws/src:/workspace/src
+      - ../data:/workspace/data
+      - /dev:/dev # Provides access to all devices, including RealSense camera
+    command: >
+      bash -c "
+      exec bash"
+    environment:
+      DISPLAY: ${DISPLAY}
+      PYTHONIOENCODING: utf-8
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+      QT_X11_NO_MITSHM: 1
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_DOMAIN_ID: 0
+      ROS_LOCALHOST_ONLY: 0
+    stdin_open: true
+    restart: unless-stopped
+    tty: true
+    network_mode: host
+    privileged: true
+
