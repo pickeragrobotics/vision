@@ -6,12 +6,12 @@ camera_yolo_detector:
     flip_image: true
     detection_topic: "/detections"
     detection_3d_topic: "/detections_3d"
-    debug_mode: false
+    debug_mode: true
     debug_image_topic: "/debug/detections_image"
     confidence_threshold: 0.25
-    sync_tolerance_sec: 0.03
+    sync_tolerance_sec: 0.04
     depth_scale_meters: 0.001
     yolo_weights_path: ""
     yolo_device: ""
     processing_period_sec: 0.001
-    log_every_n_frames: 30
+    log_every_n_frames: 300
