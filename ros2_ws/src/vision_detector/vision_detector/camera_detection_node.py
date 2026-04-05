@@ -102,7 +102,7 @@ class CameraYoloDetectionNode(Node):
 
     def _on_color_image(self, message: Image) -> None:
         color_image = self._cv_bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
-        self.get_logger().info(
+        self.get_logger().debug(
             f"Received color image with timestamp {message.header.stamp.sec}."
         )   
         self._latest_color_frame = ImageFrame(
