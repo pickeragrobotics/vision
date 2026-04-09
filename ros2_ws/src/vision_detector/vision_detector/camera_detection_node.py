@@ -220,7 +220,7 @@ class CameraYoloDetectionNode(Node):
             return
 
         annotated_image = draw_detections(frame_pair.color.image, detections)
-        debug_image = self._debug_bridge.cv2_to_imgmsg(annotated_image, encoding="bgr8")
+        debug_image = self._debug_bridge.cv2_to_imgmsg(annotated_image, encoding="rgb8")
         debug_image.header.stamp = frame_pair.color.stamp
         debug_image.header.frame_id = frame_pair.color.frame_id
         self._debug_publisher.publish(debug_image)
