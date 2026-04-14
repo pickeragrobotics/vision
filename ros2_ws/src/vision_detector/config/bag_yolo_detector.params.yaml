@@ -12,6 +12,8 @@ bag_yolo_detector:
     debug_mode: false
     debug_image_topic: "/debug/detections_image"
     confidence_threshold: 0.25
+    min_volume_m: 0.000008
+    max_volume_m: 0.001
     sync_tolerance_sec: 0.03
     depth_scale_meters: 0.001
     yolo_weights_path: ""

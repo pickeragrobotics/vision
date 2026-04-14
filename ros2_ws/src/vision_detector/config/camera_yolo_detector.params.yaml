@@ -11,6 +11,8 @@ camera_yolo_detector:
     confidence_threshold: 0.25
     sync_tolerance_sec: 0.04
     depth_scale_meters: 0.001
+    min_volume_m: 0.000008
+    max_volume_m: 0.001
     yolo_weights_path: ""
     yolo_device: ""
     processing_period_sec: 0.001

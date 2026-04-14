@@ -16,6 +16,7 @@ from vision_detector.depth_utils import (
     compute_bbox_center_pixel,
     deproject_pixel_to_3d,
     get_depth_at_pixel_m,
+    estimate_detection_physical_volume_m,
 )
 from vision_detector.image_utils import convert_to_rgb, flip_if_needed
 from vision_detector.message_utils import DetectionMessageBuilder
@@ -104,7 +105,7 @@ class CameraYoloDetectionNode(Node):
         color_image = self._cv_bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
         self.get_logger().debug(
             f"Received color image with timestamp {message.header.stamp.sec}."
-        )   
+        )
         self._latest_color_frame = ImageFrame(
             stamp=message.header.stamp,
             stamp_ns=self._stamp_to_ns(message.header.stamp.sec, message.header.stamp.nanosec),
@@ -131,6 +132,42 @@ class CameraYoloDetectionNode(Node):
             cy=float(message.k[5]),
             frame_id=message.header.frame_id,
         )
+
+    def _filter_detections_by_physical_size(
+        self, detections: list[DetectionResult], frame_pair: FramePair
+    ) -> list[DetectionResult]:
+        if not detections:
+            return detections
+        if frame_pair.depth is None or frame_pair.camera_intrinsics is None:
+            return detections
+
+        filtered_detections = []
+        min_volume_m = float(self._config.min_volume_m)
+        max_volume_m = float(self._config.max_volume_m)
+
+        for detection in detections:
+            physical_volume = estimate_detection_physical_volume_m(
+                detection=detection,
+                frame_pair=frame_pair,
+                depth_scale_meters=self._config.depth_scale_meters,
+            )
+            if physical_volume is None:
+                filtered_detections.append(detection)
+                continue
+
+            if min_volume_m <= physical_volume <= max_volume_m:
+                filtered_detections.append(detection)
+                continue
+
+
+            self.get_logger().info(
+                "Filtered detection "
+                f"'{detection.class_name}' confidence={detection.confidence:.2f}: "
+                f"estimated volume={physical_volume:.3f}m³ "
+                f"outside valid range [{min_volume_m:.3f}, {max_volume_m:.3f}]m."
+            )
+
+        return filtered_detections
 
     def _process_latest_frame(self) -> None:
         if self._latest_color_frame is None:
@@ -211,7 +248,7 @@ class CameraYoloDetectionNode(Node):
                 "Camera intrinsics are not available, so 3D detections will be skipped."
             )
             self._missing_intrinsics_warned = True
-        return detections
+        return self._filter_detections_by_physical_size(detections, frame_pair)
 
     def _publish_debug_image(
         self, frame_pair: FramePair, detections: list[DetectionResult]

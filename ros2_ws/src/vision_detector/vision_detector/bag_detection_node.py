@@ -5,7 +5,7 @@ from typing import Optional
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from vision_detector.bag_reader import FramePair, create_frame_reader
@@ -15,6 +15,7 @@ from vision_detector.depth_utils import (
     compute_bbox_center_pixel,
     deproject_pixel_to_3d,
     get_depth_at_pixel_m,
+    estimate_detection_physical_volume_m,
 )
 from vision_detector.image_utils import convert_to_rgb, flip_if_needed
 from vision_detector.message_utils import DetectionMessageBuilder
@@ -32,14 +33,22 @@ class BagYoloDetectionNode(Node):
         self._publisher_3d = self.create_publisher(
             Detection3DArray, self._config.detection_3d_topic, 10
         )
+        self._color_image_publisher = self.create_publisher(
+            Image, self._config.color_topic, 10
+        )
+        self._depth_image_publisher = self.create_publisher(
+            Image, self._config.depth_topic, 10
+        )
+        self._camera_info_publisher = self.create_publisher(
+            CameraInfo, self._config.camera_info_topic, 10
+        )
         self._debug_publisher = None
-        self._cv_bridge = None
+        self._cv_bridge = CvBridge()
         self._missing_intrinsics_warned = False
         if self._config.debug_mode:
             self._debug_publisher = self.create_publisher(
                 Image, self._config.debug_image_topic, 10
             )
-            self._cv_bridge = CvBridge()
         self._message_builder = DetectionMessageBuilder()
         self._detector = YoloDetector(
             weights_path=self._config.yolo_weights_path,
@@ -59,7 +68,9 @@ class BagYoloDetectionNode(Node):
         self.get_logger().info(
             "Bag YOLO detector initialized. "
             f"Publishing detections to '{self._config.detection_topic}' "
-            f"and '{self._config.detection_3d_topic}'."
+            f"and '{self._config.detection_3d_topic}', "
+            f"and replaying input images to '{self._config.color_topic}' "
+            f"and '{self._config.depth_topic}'."
         )
         if self._config.flip_image:
             self.get_logger().info("Input image rotation is enabled (180 degrees).")
@@ -67,6 +78,41 @@ class BagYoloDetectionNode(Node):
             self.get_logger().info(
                 f"Debug image publishing enabled on '{self._config.debug_image_topic}'."
             )
+
+    def _filter_detections_by_physical_size(
+        self, detections: list[DetectionResult], frame_pair: FramePair
+    ) -> list[DetectionResult]:
+        if not detections:
+            return detections
+        if frame_pair.depth is None or frame_pair.camera_intrinsics is None:
+            return detections
+
+        filtered_detections = []
+        min_volume_m = float(self._config.min_volume_m)
+        max_volume_m = float(self._config.max_volume_m)
+
+        for detection in detections:
+            physical_volume = estimate_detection_physical_volume_m(
+                detection=detection,
+                frame_pair=frame_pair,
+                depth_scale_meters=self._config.depth_scale_meters,
+            )
+            if physical_volume is None:
+                filtered_detections.append(detection)
+                continue
+
+            if min_volume_m <= physical_volume <= max_volume_m:
+                filtered_detections.append(detection)
+                continue
+
+            self.get_logger().info(
+                "Filtered detection "
+                f"'{detection.class_name}' confidence={detection.confidence:.2f}: "
+                f"estimated volume={physical_volume:.7f}m³ "
+                f"outside valid range [{min_volume_m:.3f}, {max_volume_m:.3f}]m."
+            )
+
+        return filtered_detections
 
     def _process_next_frame(self) -> None:
         try:
@@ -81,6 +127,7 @@ class BagYoloDetectionNode(Node):
                 self._shutdown_timer = self.create_timer(0.2, self._shutdown)
             return
 
+        self._publish_input_frames(frame_pair)
         self._apply_image_orientation(frame_pair)
         detections = self._run_inference(frame_pair)
         detection_array_2d = self._message_builder.build_2d(frame_pair.color, detections)
@@ -131,7 +178,7 @@ class BagYoloDetectionNode(Node):
                 "Camera intrinsics are not available, so 3D detections will be skipped."
             )
             self._missing_intrinsics_warned = True
-        return detections
+        return self._filter_detections_by_physical_size(detections, frame_pair)
 
     def _create_frame_reader(self):
         return create_frame_reader(
@@ -157,10 +204,81 @@ class BagYoloDetectionNode(Node):
         self._frame_reader = self._create_frame_reader()
         self._frame_iterator = iter(self._frame_reader)
 
+    def _publish_input_frames(self, frame_pair: FramePair) -> None:
+        color_image = self._cv_bridge.cv2_to_imgmsg(
+            frame_pair.color.image, encoding=frame_pair.color.encoding
+        )
+        color_image.header.stamp = frame_pair.color.stamp
+        color_image.header.frame_id = frame_pair.color.frame_id
+        self._color_image_publisher.publish(color_image)
+
+        if frame_pair.depth is not None:
+            depth_image = self._cv_bridge.cv2_to_imgmsg(
+                frame_pair.depth.image, encoding=frame_pair.depth.encoding
+            )
+            depth_image.header.stamp = frame_pair.depth.stamp
+            depth_image.header.frame_id = frame_pair.depth.frame_id
+            self._depth_image_publisher.publish(depth_image)
+
+        if frame_pair.camera_intrinsics is not None:
+            camera_info = self._build_camera_info(frame_pair)
+            self._camera_info_publisher.publish(camera_info)
+
+    def _build_camera_info(self, frame_pair: FramePair) -> CameraInfo:
+        intrinsics = frame_pair.camera_intrinsics
+        if intrinsics is None:
+            raise ValueError("Camera intrinsics are required to build CameraInfo.")
+
+        image_height, image_width = frame_pair.color.image.shape[:2]
+        camera_info = CameraInfo()
+        camera_info.header.stamp = frame_pair.color.stamp
+        camera_info.header.frame_id = intrinsics.frame_id
+        camera_info.height = image_height
+        camera_info.width = image_width
+        camera_info.distortion_model = "plumb_bob"
+        camera_info.d = []
+        camera_info.k = [
+            intrinsics.fx,
+            0.0,
+            intrinsics.cx,
+            0.0,
+            intrinsics.fy,
+            intrinsics.cy,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        camera_info.r = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        camera_info.p = [
+            intrinsics.fx,
+            0.0,
+            intrinsics.cx,
+            0.0,
+            0.0,
+            intrinsics.fy,
+            intrinsics.cy,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        ]
+        return camera_info
+
     def _publish_debug_image(
         self, frame_pair: FramePair, detections: list[DetectionResult]
     ) -> None:
-        if self._debug_publisher is None or self._cv_bridge is None:
+        if self._debug_publisher is None:
             return
 
         annotated_image = draw_detections(frame_pair.color.image, detections)

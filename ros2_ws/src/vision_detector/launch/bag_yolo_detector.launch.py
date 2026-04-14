@@ -19,17 +19,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "bag_path",
-                default_value="/workspace/data/real_sense_bags/20260312_100746.bag",
+                default_value="/workspace/data/real_sense_bags/20260226_102501.bag",
                 description="Path to a ROS 2 bag URI or a native RealSense .bag file.",
             ),
             DeclareLaunchArgument(
                 "yolo_weights_path",
-                default_value="/workspace/data/weights/avocado_detection_v2.pt",
+                default_value="/workspace/data/weights/avocado_and_stem_12.4.pt",
                 description="Path to the YOLO weights file.",
             ),
             DeclareLaunchArgument(
                 "flip_image",
-                default_value="true",
+                default_value="false",
                 description="Rotate the input image stream by 180 degrees before processing.",
             ),
             DeclareLaunchArgument(
@@ -51,6 +51,16 @@ def generate_launch_description() -> LaunchDescription:
                 "debug_image_topic",
                 default_value="/debug/detections_image",
                 description="Topic used for annotated detection images.",
+            ),
+            DeclareLaunchArgument(
+                "min_volume_m",
+                default_value="0.0",
+                description="Minimum physical volume for detected objects.",
+            ),
+            DeclareLaunchArgument(
+                "max_volume_m",
+                default_value="2.30",
+                description="Maximum physical volume for detected objects.",
             ),
             Node(
                 package="vision_detector",

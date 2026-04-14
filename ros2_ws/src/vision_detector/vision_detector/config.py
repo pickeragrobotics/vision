@@ -25,6 +25,8 @@ class DetectorConfig:
     yolo_device: str
     processing_period_sec: float
     log_every_n_frames: int
+    min_volume_m: float
+    max_volume_m: float
 
     @classmethod
     def from_node(cls, node: Node) -> "DetectorConfig":
@@ -89,6 +91,20 @@ class DetectorConfig:
             ),
         )
         node.declare_parameter(
+            "min_volume_m",
+            0.02,
+            ParameterDescriptor(
+                description="Minimum plausible detection volume in cubic meters, measured as the volume of an ellipsoid fit to the detection bbox and median depth."
+            ),
+        )
+        node.declare_parameter(
+            "max_volume_m",
+            2.30,
+            ParameterDescriptor( 
+                description="Maximum plausible detection volume in cubic meters, measured as the volume of an ellipsoid fit to the detection bbox and median depth."
+            ),
+        )
+        node.declare_parameter(
             "debug_image_topic",
             "/debug/detections_image",
             ParameterDescriptor(
@@ -150,6 +166,8 @@ class DetectorConfig:
             yolo_device=node.get_parameter("yolo_device").get_parameter_value().string_value,
             processing_period_sec=node.get_parameter("processing_period_sec").value,
             log_every_n_frames=node.get_parameter("log_every_n_frames").value,
+            min_volume_m=node.get_parameter("min_volume_m").value,
+            max_volume_m=node.get_parameter("max_volume_m").value,
         )
         config.validate()
         return config
@@ -198,10 +216,14 @@ class LiveDetectorConfig:
     confidence_threshold: float
     sync_tolerance_sec: float
     depth_scale_meters: float
+    min_size_m: float
+    max_size_m: float
     yolo_weights_path: str
     yolo_device: str
     processing_period_sec: float
     log_every_n_frames: int
+    min_volume_m: float
+    max_volume_m: float
 
     @classmethod
     def from_node(cls, node: Node) -> "LiveDetectorConfig":
@@ -249,6 +271,20 @@ class LiveDetectorConfig:
             ),
         )
         node.declare_parameter(
+            "min_volume_m",
+            0.02,
+            ParameterDescriptor(
+                description="Minimum plausible detection volume in cubic meters, measured as the volume of an ellipsoid fit to the detection bbox and median depth."
+            ),
+        )
+        node.declare_parameter(
+            "max_volume_m",
+            2.30,
+            ParameterDescriptor( 
+                description="Maximum plausible detection volume in cubic meters, measured as the volume of an ellipsoid fit to the detection bbox and median depth."
+            ),
+        )
+        node.declare_parameter(
             "debug_image_topic",
             "/debug/detections_image",
             ParameterDescriptor(
@@ -270,6 +306,20 @@ class LiveDetectorConfig:
             0.001,
             ParameterDescriptor(
                 description="Meters-per-unit scale for integer depth images when no native scale is available."
+            ),
+        )
+        node.declare_parameter(
+            "min_size_m",
+            0.02,
+            ParameterDescriptor(
+                description="Minimum plausible detection size in meters, measured as the larger bbox dimension."
+            ),
+        )
+        node.declare_parameter(
+            "max_size_m",
+            0.30,
+            ParameterDescriptor(
+                description="Maximum plausible detection size in meters, measured as the larger bbox dimension."
             ),
         )
         node.declare_parameter(
@@ -305,10 +355,14 @@ class LiveDetectorConfig:
             confidence_threshold=node.get_parameter("confidence_threshold").value,
             sync_tolerance_sec=node.get_parameter("sync_tolerance_sec").value,
             depth_scale_meters=node.get_parameter("depth_scale_meters").value,
+            min_size_m=node.get_parameter("min_size_m").value,
+            max_size_m=node.get_parameter("max_size_m").value,
             yolo_weights_path=node.get_parameter("yolo_weights_path").get_parameter_value().string_value,
             yolo_device=node.get_parameter("yolo_device").get_parameter_value().string_value,
             processing_period_sec=node.get_parameter("processing_period_sec").value,
             log_every_n_frames=node.get_parameter("log_every_n_frames").value,
+            min_volume_m=node.get_parameter("min_volume_m").value,
+            max_volume_m=node.get_parameter("max_volume_m").value,
         )
         config.validate()
         return config
@@ -336,6 +390,12 @@ class LiveDetectorConfig:
             raise ValueError("Parameter 'sync_tolerance_sec' must be non-negative.")
         if float(self.depth_scale_meters) <= 0.0:
             raise ValueError("Parameter 'depth_scale_meters' must be positive.")
+        if float(self.min_size_m) < 0.0:
+            raise ValueError("Parameter 'min_size_m' must be non-negative.")
+        if float(self.max_size_m) <= 0.0:
+            raise ValueError("Parameter 'max_size_m' must be positive.")
+        if float(self.min_size_m) > float(self.max_size_m):
+            raise ValueError("Parameter 'min_size_m' must be less than or equal to 'max_size_m'.")
         if float(self.processing_period_sec) <= 0.0:
             raise ValueError("Parameter 'processing_period_sec' must be positive.")
         if int(self.log_every_n_frames) <= 0:

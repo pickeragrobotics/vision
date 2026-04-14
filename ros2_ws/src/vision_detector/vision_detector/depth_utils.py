@@ -4,7 +4,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from vision_detector.bag_reader import CameraIntrinsics, ImageFrame
+from vision_detector.bag_reader import CameraIntrinsics, ImageFrame, FramePair
+from vision_detector.yolo_detector import DetectionResult
 
 
 def clamp_bbox_to_image(
@@ -62,6 +63,42 @@ def compute_median_depth_m(
         return None
 
     return float(np.median(valid_depths))
+
+def estimate_detection_physical_volume_m(
+        detection: DetectionResult, frame_pair: FramePair, depth_scale_meters: float
+    ) -> Optional[float]:
+        intrinsics = frame_pair.camera_intrinsics
+        if frame_pair.depth is None or intrinsics is None:
+            return None
+        if intrinsics.fx <= 0.0 or intrinsics.fy <= 0.0:
+            return None
+
+        median_depth_m = compute_median_depth_m(
+            depth_frame=frame_pair.depth,
+            bbox_xyxy=detection.bbox_xyxy,
+            fallback_depth_scale_meters=depth_scale_meters,
+        )
+        if median_depth_m is None:
+            return None
+
+        clamped_bbox = clamp_bbox_to_image(
+            detection.bbox_xyxy,
+            frame_pair.color.image.shape[:2],
+        )
+        if clamped_bbox is None:
+            return None
+
+        x_min, y_min, x_max, y_max = clamped_bbox
+        width_px = max(0, x_max - x_min)
+        height_px = max(0, y_max - y_min)
+        if width_px == 0 or height_px == 0:
+            return None
+
+        width_m = float(width_px) * median_depth_m / intrinsics.fx
+        height_m = float(height_px) * median_depth_m / intrinsics.fy
+        # Volume of ellipsoid: V = (4/3) * pi * a * b * c
+        volume = (4.0 / 3.0) * 3.14159 * (width_m / 2.0) * (height_m / 2.0) * (width_m / 2.0)
+        return volume
 
 
 def compute_bbox_center_pixel(
